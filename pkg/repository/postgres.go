@@ -2,9 +2,14 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 
+	"strings"
+
+	"github.com/gorilla/websocket"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
@@ -93,12 +98,12 @@ func NewSelectDB(db *sqlx.DB) ([]Abonent, error) {
 	return abonent, nil
 }
 
-func NewQueryDB(db *sqlx.DB) error {
+func NewQueryDB(db *sqlx.DB) (AbonentStr, error) {
 
 	rows, err := db.Queryx("SELECT * FROM abonents LIMIT 10")
 
 	if err != nil {
-		return err
+		log.Fatal("Error NewQueryDB:", err)
 	}
 
 	var a Abonent
@@ -117,7 +122,7 @@ func NewQueryDB(db *sqlx.DB) error {
 	for rows.Next() {
 		err = rows.StructScan(&a)
 		if err != nil {
-			return err
+			log.Fatal("Error NewQueryDB:", err)
 		}
 		kol++
 		as.Id = SqlString(a.Id)
@@ -151,13 +156,13 @@ func NewQueryDB(db *sqlx.DB) error {
 
 	aj, err := json.Marshal(as)
 	if err != nil {
-		return err
+		log.Fatal("Error NewQueryDB:", err)
 	}
 
 	var au AbonentStr
 	err = json.Unmarshal(aj, &au)
 	if err != nil {
-		return err
+		log.Fatal("Error NewQueryDB:", err)
 	}
 
 	//	fmt.Printf("%#v\n", a)
@@ -166,7 +171,7 @@ func NewQueryDB(db *sqlx.DB) error {
 	fmt.Println(au)
 	fmt.Println(string(aj))
 
-	return nil
+	return as, nil
 }
 
 func NewPostgresDB(cfg Config) (*sqlx.DB, error) {
@@ -182,4 +187,118 @@ func NewPostgresDB(cfg Config) (*sqlx.DB, error) {
 	}
 
 	return db, nil
+}
+
+func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn) error {
+
+	rows, err := db.Queryx("SELECT * FROM abonents LIMIT 1000")
+
+	if err != nil {
+		log.Fatal("Error NewQueryDB:", err)
+		return err
+	}
+
+	var a Abonent
+	var as AbonentStr
+
+	kol := 0
+
+	for rows.Next() {
+		err = rows.StructScan(&a)
+		if err != nil {
+			log.Fatal("Error NewQueryDB:", err)
+			return err
+		}
+		kol++
+		as.Id = SqlString(a.Id)
+		as.Ls_reg = SqlString(a.Ls_reg)
+		as.Uuid = SqlString(a.Uuid)
+		as.Ncounter = SqlString(a.Ncounter)
+		as.Ls_gas = SqlString(a.Ls_gas)
+		as.Id_ais = SqlString(a.Id_ais)
+		as.Database_name = SqlString(a.Database_name)
+		as.Typecounter = SqlString(a.Typecounter)
+		as.Street_uuid = SqlString(a.Street_uuid)
+		as.Fio = SqlString(a.Fio)
+		as.Adress = SqlString(a.Adress)
+		as.Id_turg = SqlString(a.Id_turg)
+		as.Id_rajon = SqlString(a.Id_rajon)
+		as.Id_filial = SqlString(a.Id_filial)
+		as.Legal_org = SqlString(a.Legal_org)
+		as.Verification_date = SqlString(a.Verification_date)
+		as.Ncounter_real = SqlString(a.Ncounter_real)
+		as.Equipment_uuid = SqlString(a.Equipment_uuid)
+		as.Working = SqlString(a.Working)
+		as.Date_remote = SqlString(a.Date_remote)
+		as.Date_amount = SqlString(a.Date_amount)
+		as.Amount = SqlString(a.Amount)
+		as.Equipment_name = SqlString(a.Equipment_name)
+		as.Department_uuid = SqlString(a.Department_uuid)
+		as.Update_date = SqlString(a.Update_date)
+		asend, err := json.Marshal(as)
+		if err != nil {
+			log.Fatal("Error NewQueryDB:", err)
+			return err
+		}
+		json64 := strings.TrimSpace(base64.StdEncoding.EncodeToString(asend))
+		err = wsc.WriteMessage(websocket.TextMessage, []byte(json64))
+		if err != nil {
+			//log.Println("failed to write message:", err)
+			return err
+		}
+	}
+
+	fmt.Println(kol)
+
+	err = wsc.WriteMessage(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	if err != nil {
+		//log.Println("failed to write message:", err)
+		return err
+	}
+
+	return nil
+}
+
+func Process(c *websocket.Conn, AbSt AbonentStr) {
+
+	aSt, err := json.Marshal(AbSt)
+	if err != nil {
+		return
+	}
+
+	qw := strings.TrimSpace(base64.StdEncoding.EncodeToString(aSt))
+	//qw := strings.TrimSpace("C43OTE2OTZaIn0=")
+
+	// write the message as a byte across the websocket
+	err = c.WriteMessage(websocket.TextMessage, []byte(qw))
+
+	//err = c.WriteMessage(websocket.TextMessage, []byte(aSt))
+	//err = c.WriteJSON(aSt)
+	if err != nil {
+		//log.Println("failed to write message:", err)
+		return
+	}
+	/*
+		err = c.WriteJSON(aSt)
+		if err != nil {
+			//log.Println("failed to write message:", err)
+			return
+		}
+	*/
+	err = c.WriteMessage(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	if err != nil {
+		//log.Println("failed to write message:", err)
+		return
+	}
+
+	// this is an echo server, so we can always read after the write
+	/*_, message, err := c.ReadMessage()
+	if err != nil {
+		//log.Println("failed to read:", err)
+		return
+	}*/
+	//log.Printf("received back from server: %#v\n", string(message))
+	//fmt.Printf("%#v\n", string(message))
 }
