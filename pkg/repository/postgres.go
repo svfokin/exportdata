@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"strings"
 
@@ -191,7 +192,7 @@ func NewPostgresDB(cfg Config) (*sqlx.DB, error) {
 
 func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn) error {
 
-	rows, err := db.Queryx("SELECT * FROM abonents LIMIT 1000")
+	rows, err := db.Queryx("SELECT * FROM abonents LIMIT 1")
 
 	if err != nil {
 		log.Fatal("Error NewQueryDB:", err)
@@ -249,6 +250,7 @@ func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn) error {
 	}
 
 	fmt.Println(kol)
+	fmt.Println(time.Now())
 
 	err = wsc.WriteMessage(websocket.CloseMessage,
 		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
