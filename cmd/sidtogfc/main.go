@@ -3,6 +3,9 @@ package main
 import (
 	"exportdata/pkg/repository"
 	"fmt"
+	"path"
+	"time"
+
 	"log"
 	"os"
 	"os/signal"
@@ -25,12 +28,26 @@ func catchSig(ch chan os.Signal, c *websocket.Conn) {
 }
 
 func main() {
+
+	// текущие дата время для формирования имени log-файла
+	t := time.Now()
+	LOGFILE := path.Join(repository.DirExist(), t.Format("20060102150405")+".log")
+	f, err := os.OpenFile(LOGFILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer f.Close()
+
+	Info := log.New(f, "", log.LstdFlags)
+	Info.Println("New export session")
+
 	if err := initConfig(); err != nil {
-		log.Fatalf("error initializing configs: %s", err.Error())
+		Info.Fatalf("ERROR initializing configs: %s", err.Error())
 	}
 
 	if err := godotenv.Load(); err != nil {
-		log.Fatalf("error loading env variables: %s", err.Error())
+		Info.Fatalf("ERROR loading env variables: %s", err.Error())
 	}
 
 	db, err := repository.NewPostgresDB(repository.Config{
@@ -43,12 +60,13 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatalf("failed to initialize db: %s", err.Error())
-	} else {
+		Info.Fatalf("ERROR - failed to initialize db: %s", err.Error())
+		//log.Fatalf("failed to initialize db: %s", err.Error())
+	}
+	/*else {
 		sdn := db.DriverName()
 		fmt.Println(sdn)
-
-	}
+	}*/
 
 	/*
 		abon1, err := repository.NewSelectDB(db)
@@ -70,9 +88,13 @@ func main() {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
-	// use the ws:// Scheme to connect to the websocket
-	u := "ws://192.168.1.194:8000/"
+	ip := viper.GetString("ws.ip")
+	portIP := viper.GetString("ws.port_ip")
+
+	// Используем схему ws:// для подключения к websocket
+	u := "ws://" + ip + ":" + portIP + "/"
 	log.Printf("connecting to %s", u)
+	Info.Println("New connecting to " + u)
 
 	c, _, err := websocket.DefaultDialer.Dial(u, nil)
 	if err != nil {
@@ -83,7 +105,7 @@ func main() {
 	// dispatch our signal catcher
 	go catchSig(interrupt, c)
 
-	err = repository.SelectAndSend(db, c)
+	err = repository.SelectAndSend(db, c, Info)
 	if err != nil {
 		log.Fatal("send:", err)
 	}

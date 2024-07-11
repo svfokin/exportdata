@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strconv"
 	"time"
 
 	"strings"
@@ -14,6 +17,10 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
+
+type LogExp struct {
+	log *log.Logger
+}
 
 type Config struct {
 	Host     string
@@ -86,6 +93,24 @@ func SqlString(str sql.NullString) string {
 		return str.String
 	}
 	return "_"
+}
+
+// Функция проверяет наличие папки log в текущим каталоге и создает её при отсутствии
+// Возвращает полный путь
+func DirExist() string {
+	var here = os.Args[0]
+	here1 := filepath.Dir(here)
+	/*if err != nil {
+		fmt.Printf("Неправильный путь: %s\n", err)
+	}*/
+	dir := here1 + string(os.PathSeparator) + "log"
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		err := os.Mkdir(dir, 0755)
+		if err != nil {
+			return here
+		}
+	}
+	return dir
 }
 
 func NewSelectDB(db *sqlx.DB) ([]Abonent, error) {
@@ -190,14 +215,18 @@ func NewPostgresDB(cfg Config) (*sqlx.DB, error) {
 	return db, nil
 }
 
-func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn) error {
+func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn, lg *log.Logger) error {
 
-	rows, err := db.Queryx("SELECT * FROM abonents LIMIT 1")
+	rows, err := db.Queryx("SELECT * FROM abonents LIMIT 100000")
 
 	if err != nil {
-		log.Fatal("Error NewQueryDB:", err)
+		lg.Fatal("Error NewQueryDB:", err)
 		return err
+	} else {
+		lg.Println("Selecting data from the database")
 	}
+
+	lg.SetFlags(log.Ltime)
 
 	var a Abonent
 	var as AbonentStr
@@ -207,7 +236,7 @@ func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn) error {
 	for rows.Next() {
 		err = rows.StructScan(&a)
 		if err != nil {
-			log.Fatal("Error NewQueryDB:", err)
+			lg.Fatal("Error NewQueryDB:", err)
 			return err
 		}
 		kol++
@@ -238,7 +267,7 @@ func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn) error {
 		as.Update_date = SqlString(a.Update_date)
 		asend, err := json.Marshal(as)
 		if err != nil {
-			log.Fatal("Error NewQueryDB:", err)
+			lg.Fatal("Error NewQueryDB:", err)
 			return err
 		}
 		json64 := strings.TrimSpace(base64.StdEncoding.EncodeToString(asend))
@@ -247,10 +276,17 @@ func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn) error {
 			//log.Println("failed to write message:", err)
 			return err
 		}
+		lg.Println(strconv.Itoa(kol) + " " + as.Equipment_uuid)
+		if kol%5000 == 0 {
+			fmt.Println(kol, " records sent")
+		}
 	}
 
-	fmt.Println(kol)
+	lg.SetFlags(log.LstdFlags)
+
+	fmt.Println("Total sent ", kol, " records")
 	fmt.Println(time.Now())
+	lg.Println("End of export. All: " + strconv.Itoa(kol))
 
 	err = wsc.WriteMessage(websocket.CloseMessage,
 		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
