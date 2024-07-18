@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/base64"
 	"exportdata/pkg/repository"
 	"fmt"
 	"path"
+	"strings"
 	"time"
 
 	"log"
@@ -39,6 +41,8 @@ func main() {
 	}
 	defer f.Close()
 
+	var dbpsswd string = ""
+
 	Info := log.New(f, "", log.LstdFlags)
 	Info.Println("New export session")
 
@@ -48,6 +52,22 @@ func main() {
 
 	if err := godotenv.Load(); err != nil {
 		Info.Fatalf("ERROR loading env variables: %s", err.Error())
+	} else {
+		var dbps64 = os.Getenv("DB_PASSWORD")
+		if len(strings.TrimSpace(dbps64)) != 0 {
+			dbpssw, err := base64.StdEncoding.DecodeString(dbps64)
+			dbpsswd = string(dbpssw)
+			if err != nil {
+				Info.Fatalf("ERROR decode password: %s", err.Error())
+				return
+			}
+		} else {
+			fmt.Println("Введите пароль пользователя базы данных:")
+			fmt.Scanf("%s\n", &dbpsswd)
+			envstr := "DB_PASSWORD=" + strings.TrimSpace(base64.StdEncoding.EncodeToString([]byte(dbpsswd)))
+			env, _ := godotenv.Unmarshal(envstr)
+			err = godotenv.Write(env, "./.env")
+		}
 	}
 
 	db, err := repository.NewPostgresDB(repository.Config{
@@ -56,7 +76,7 @@ func main() {
 		Username: viper.GetString("db.username"),
 		DBName:   viper.GetString("db.dbname"),
 		SSLMode:  viper.GetString("db.sslmode"),
-		Password: os.Getenv("DB_PASSWORD"),
+		Password: dbpsswd,
 	})
 
 	if err != nil {
@@ -98,7 +118,7 @@ func main() {
 
 	c, _, err := websocket.DefaultDialer.Dial(u, nil)
 	if err != nil {
-		log.Fatal("dial:", err)
+		Info.Fatal("ERROR dial:", err)
 	}
 	defer c.Close()
 
@@ -107,7 +127,7 @@ func main() {
 
 	err = repository.SelectAndSend(db, c, Info)
 	if err != nil {
-		log.Fatal("send:", err)
+		Info.Fatal("ERROR send:", err)
 	}
 	//repository.Process(c, Abon2)
 

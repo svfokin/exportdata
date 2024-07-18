@@ -217,7 +217,7 @@ func NewPostgresDB(cfg Config) (*sqlx.DB, error) {
 
 func SelectAndSend(db *sqlx.DB, wsc *websocket.Conn, lg *log.Logger) error {
 
-	rows, err := db.Queryx("SELECT * FROM abonents LIMIT 100000")
+	rows, err := db.Queryx("SELECT * FROM abonents")
 
 	if err != nil {
 		lg.Fatal("Error NewQueryDB:", err)
